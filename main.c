@@ -92,9 +92,16 @@ uint8_t data_index;
 uint8_t checksum_flag;
 uint8_t TX_ATTEMP_MAX = 5;
 bool random_flag =0;
+bool Transmit_control_flag = 0 ;
 //
 uint8_t Ack_Tx_attemp_count =0 ;
 uint32_t   wait_time_out = 0;
+uint8_t T_0 = 100;
+
+
+
+char STR_TO_INT[8];
+
 
 #ifdef DEBUG_UART0_MSG
        char STR_DEBUG[100];
@@ -123,7 +130,8 @@ typedef struct device_buffer
     uint8_t DEVICE_ADDRESS;
     bool    Send_packet_uart_command;
     bool    Receive_packet_uart_command;
-    void(*Packet_fn)();
+    void(*_fn)();
+    void(*_Sel_fn)();                // This function for selection of transmit_uart1 or receive_uart1
 }   DEVICE_DATA_BUFFER;
 
 uart_message_data ADDRESS_1_DATA[MAX_MSGS];
@@ -133,6 +141,7 @@ void Device_initialization()
 {
     uint8_t i;
     DEVICE_DETAIL.DEVICE_ADDRESS = 2;          // Default address set to 2
+    putsUart0("<<<DEVICE ADDRESS IS 2>>>>>>>>>> \r\n");
     DEVICE_DETAIL.CURRENT_INDEX_BUFFER = 0;
     DEVICE_DETAIL.message_buffer = ADDRESS_1_DATA;
 
@@ -158,6 +167,7 @@ void sendpacket(uint8_t dest_add, uint8_t command, uint8_t channel, uint8_t size
         {
           //  ADDRESS_1_DATA[DEVICE_DETAIL.CURRENT_INDEX_BUFFER].ACK_FROM_DEST_ADDR
             ADDRESS_1_DATA[DEVICE_DETAIL.CURRENT_INDEX_BUFFER].COMMAND_MSG = command | 0x80;
+            ADDRESS_1_DATA[DEVICE_DETAIL.CURRENT_INDEX_BUFFER].ACK_FROM_DEST_ADDR = true;
         }
          else
             ADDRESS_1_DATA[DEVICE_DETAIL.CURRENT_INDEX_BUFFER].COMMAND_MSG = command;
@@ -185,8 +195,11 @@ void sendpacket(uint8_t dest_add, uint8_t command, uint8_t channel, uint8_t size
 
         VALID_BIT_SET |= 1 << DEVICE_DETAIL.CURRENT_INDEX_BUFFER;
 
-        if(DEVICE_DETAIL.CURRENT_INDEX_BUFFER<MAX_MSGS)
-            DEVICE_DETAIL.CURRENT_INDEX_BUFFER++;
+        if(ADDRESS_1_DATA[DEVICE_DETAIL.CURRENT_INDEX_BUFFER].ACK_FROM_DEST_ADDR == false & !ACK_ON)
+        {
+           if(DEVICE_DETAIL.CURRENT_INDEX_BUFFER<MAX_MSGS)
+               DEVICE_DETAIL.CURRENT_INDEX_BUFFER++;
+        }
     }
 }
 
@@ -332,19 +345,9 @@ uint16_t getcUart1() {
 void PutsUart0_int(char *str_head, uint8_t *in )
 // function convert uint8_t into string i.e. 1234 for in Interrupt service routine
 {
-    char str_dis[5];
-    uint8_t str_paras[4];
-    int i=0;
-    str_paras[0]=*in%10;
-    str_paras[1]=(*in%100-str_paras[0])/10;
-    str_paras[2]=((*in%1000)-(*in%100))/100;
-    str_paras[3]=(*in/1000);
-
-    memset(str_dis,0,5);
-    for( i=0;i<5;i++)
-        str_dis[i]=(*(str_paras+(3-i))+48);
-
-    str_dis[4]=0;
+    char str_dis[7];
+    uint8_t temp  = (*in);
+    ltoa(temp, str_dis,10);
     putsUart0(str_head);
     putsUart0(" : ");
     putsUart0(str_dis);
@@ -354,6 +357,8 @@ void PutsUart0_int(char *str_head, uint8_t *in )
 // Blocking function that returns with serial data once the buffer is not empty
 void getsUart0()
 {
+    putsUart0("getsUart0() in \r\n");
+    putsUart0("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\r\n");
     for (s = 0; s < MAX_CHARS; s++) {
         str[s] = 0;
     }
@@ -379,10 +384,13 @@ void getsUart0()
         }
         count++;
     }
+
+    putsUart0("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\r\n");
 }
 
 void delimiters()
 {
+
     k = 0;
     for (k = 0; k < count; k++)        // FOR 81 CHARACTERS
             {
@@ -398,6 +406,7 @@ void delimiters()
         }
 
     }
+
 }
 void Parsing()
 {
@@ -443,6 +452,7 @@ void Parsing()
         }
 
     }
+
 }
 
 char* getstring(uint8_t a)
@@ -469,11 +479,22 @@ void debug_uart(char * str,uint8_t val)
 
 void strcommand()
 {
+
+
     if (iscommand("set", 3)) {
 
         address = getnumber(1);
         channel = getnumber(2);
         value[0][0] = getnumber(3);
+
+        putsUart0("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\n");
+        putsUart0("\n");
+        PutsUart0_int("address ",&address);
+        PutsUart0_int("channel ",&channel);
+        PutsUart0_int("value[0][0] ",&value[0][0]);
+        putsUart0("\n");
+        putsUart0("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\n");
+
         sendpacket(address, 0x00, channel, 0x01, value[0]);
     }
 
@@ -492,8 +513,10 @@ void strcommand()
         char* x = getstring(1);
 
         if (strcmp(x, "on") == 0) {
+            putsUart0("CS is on \r\n");
             CS_ENABLE = true;
         } else if (strcmp(x, "off") == 0) {
+            putsUart0("CS is off \r\n");
             CS_ENABLE = false;
         } else
             putsUart0("command error");
@@ -504,11 +527,11 @@ void strcommand()
         char* x = getstring(1);
 
         if (strcmp(x, "on") == 0) {
-
+            putsUart0("Random is on \r\n");
             RANDOM_ENABLE = true;
         }
-        if (strcmp(x, "off") == 0) {
-
+        else if (strcmp(x, "off") == 0) {
+            putsUart0("Random is off \r\n");
             RANDOM_ENABLE = false;
         } else
             putsUart0("invalid command");
@@ -560,16 +583,21 @@ void strcommand()
 
 void Timeout_send_ack()
 {
-    uint8_t T_0 = 100;
-    if(RANDOM_ENABLE == true & !random_flag)
+
+    if(RANDOM_ENABLE == true )
     {
         Ack_Tx_attemp_count = 4;
         wait_time_out = T_0*(1<<Ack_Tx_attemp_count); // 800ms
-        random_flag = true;
+
+      //  random_flag = true;
 
 #ifdef DEBUG_UART0_MSG
-        sprintf(STR_DEBUG," Timeout_send_ack() > wait_time_out : %u | RANDOM_ENABLE == true \r\n",wait_time_out);
-        putsUart0(STR_DEBUG);
+        putsUart0("wait_time_out : ");
+        ltoa(wait_time_out, STR_TO_INT,10);
+        putsUart0(STR_TO_INT);
+        putsUart0("\r\n");
+
+        putsUart0("| RANDOM_ENABLE == true \n\r");
 #endif
 
     }
@@ -596,9 +624,39 @@ void Timeout_send_ack()
     }
 }
 
+void transmited_packets()
+{
+
+        putsUart0("********************************\r\n");
+        putsUart0("TRANSMITTED DATA FROM ");
+        PutsUart0_int(" NODE ",&ADDRESS_1_DATA[currentindex].SENDER_ADDRESS);
+        putsUart0(" >>>> ");
+        PutsUart0_int(" TRANSMIT NODE ",&ADDRESS_1_DATA[currentindex].DEST_ADDRESS);
+        putsUart0("--------------------------------\r\n");
+        PutsUart0_int(" TRANSMIT NODE ",&ADDRESS_1_DATA[currentindex].DEST_ADDRESS);
+        PutsUart0_int("SOURCE ADDRESS ",&ADDRESS_1_DATA[currentindex].SENDER_ADDRESS);
+        PutsUart0_int("SEQ ID         ",&ADDRESS_1_DATA[currentindex].CURRENT_SEQENCE_ID);
+        PutsUart0_int("COMMAND        ",&ADDRESS_1_DATA[currentindex].COMMAND_MSG);
+        PutsUart0_int("CHANNEL        ",&ADDRESS_1_DATA[currentindex].CHANNEL_ADDR_OF_DEST);
+        PutsUart0_int("SIZE           ",&ADDRESS_1_DATA[currentindex].MESSAGE_SIZE);
+
+        for(i_for =0; i_for < ADDRESS_1_DATA[currentindex].MESSAGE_SIZE;i_for++)
+        {
+        PutsUart0_int("DATA           ",&ADDRESS_1_DATA[currentindex].DATA_MSG[i_for]);
+        }
+
+        PutsUart0_int("CHECKSUM       ",&ADDRESS_1_DATA[currentindex].CHECK_SUM);
+        PutsUart0_int("ACK SET OR NOT ",&ADDRESS_1_DATA[currentindex].ACK_FROM_DEST_ADDR);
+        PutsUart0_int("VALID BIT SET  ",&ADDRESS_1_DATA[currentindex].VALID_BIT);
+
+        putsUart0("********************************\r\n");
+        putsUart0("\r\n");
+}
+
 
 void transmit_uart1()
 {
+
         if (!Inprogress)
         {
             for (i = 0; i < MAX_MSGS; i++)
@@ -662,18 +720,47 @@ void transmit_uart1()
 
               Inprogress = false;
               TX_phase = 0;
-
+              transmited_packets();
               if (ADDRESS_1_DATA[currentindex].ACK_FROM_DEST_ADDR == false)
               {
                   ADDRESS_1_DATA[currentindex].VALID_BIT = false;
               }
               else
               {
-                  Timeout_send_ack();
-                  wait_time_out--;
-              // if(wait_time_out<=0)
+                  Transmit_control_flag = true ;
+                  DEVICE_DETAIL._fn= &Timeout_send_ack;
+                  DEVICE_DETAIL._fn();
+
               }
           }
+
+}
+
+void print_received_packets()
+{
+#ifdef DEBUG_UART0_MSG
+
+        putsUart0("********************************\r\n");
+
+        PutsUart0_int("RECEIVED DATA FROM ",&RX_DATA[1]);
+        putsUart0("--------------------------------\r\n");
+        PutsUart0_int(" TRANSMIT NODE  ",&RX_DATA[0]);
+        PutsUart0_int("SOURCE ADDRESS ",&RX_DATA[1]);
+        PutsUart0_int("SEQ ID         ",&RX_DATA[2]);
+        PutsUart0_int("COMMAND        ",&RX_DATA[3]);
+        PutsUart0_int("CHANNEL        ",&RX_DATA[4]);
+        PutsUart0_int("SIZE           ",&RX_DATA[5]);
+
+        for(i_for =0; i_for < RX_DATA[5];i_for++)
+        {
+        PutsUart0_int("DATA           ",&RX_DATA[6+i_for]);
+        }
+
+        PutsUart0_int("CHECKSUM       ",&RX_DATA[receivephase]);
+
+        putsUart0("********************************\r\n");
+        putsUart0("\r\n");
+#endif
 }
 
 void process_received_uart1_packet()
@@ -699,8 +786,9 @@ void process_received_uart1_packet()
     {
 
 #ifdef DEBUG_UART0_MSG
-        putsUart0("\rACK Command received  \n\r");
-        putsUart0("\rTEST ACK Command received  \n\r");
+        putsUart0("\r SENDER ");
+        PutsUart0_int(" NODE : ",&RX_DATA[2]);
+        putsUart0(" DEMANDED ACK  \n\r");
 #endif
         sendpacket(RX_DATA[1], 0x70, RX_DATA[4],1,(RX_DATA+2));
     }
@@ -710,10 +798,20 @@ void process_received_uart1_packet()
     {
         // This indicate successful reception of ACK from Receiver
          if(RX_DATA[6] == ADDRESS_1_DATA[currentindex].CURRENT_SEQENCE_ID)
+         {
              ADDRESS_1_DATA[currentindex].VALID_BIT = false;
+             ADDRESS_1_DATA[currentindex].ACK_FROM_DEST_ADDR = false;
+             DEVICE_DETAIL.CURRENT_INDEX_BUFFER++;
+         }
+
+
+         Transmit_control_flag = false;
+         wait_time_out = 0;
+         DEVICE_DETAIL._fn = NULL;
 
 #ifdef DEBUG_UART0_MSG
-         putsUart0("\rACK sent to Sender \n\r");
+         putsUart0("\r ACK RECEIVED FROM ");
+         PutsUart0_int(" NODE :",&RX_DATA[1]);
 #endif
          RECEIVED_CMD = 0;
 
@@ -722,8 +820,24 @@ void process_received_uart1_packet()
 
 void Receive_uart1()
 {
+
     checksum_flag = 0;
-    //RECEIVER PART
+
+    if(DEVICE_DETAIL._fn)
+    {
+        wait_time_out--;
+        if(wait_time_out<=0)
+        {
+            DEVICE_DETAIL._fn = NULL;
+
+#ifdef DEBUG_UART0_MSG
+       putsUart0("\r wait_time_out Failed to get ACK \n\r");
+#endif
+       Transmit_control_flag = 0;
+       ADDRESS_1_DATA[currentindex].VALID_BIT = false;
+        }
+    }
+
         if ((UART1_FR_R & UART_FR_BUSY) == 0) {
             DE = 0;
             if (TX_phase == 0) {
@@ -783,26 +897,7 @@ void Receive_uart1()
                         RXADDDATA = ~RXADDDATA;                   //CHECKSUM RECEIVE
 
 #ifdef DEBUG_UART0_MSG
-
-        putsUart0("********************************\r\n");
-        putsUart0("RECEIVED DATA NODE 2\r\n");
-        putsUart0("--------------------------------\r\n");
-        PutsUart0_int(" TRANSMIT NODE ",&RX_DATA[0]);
-        PutsUart0_int("SOURCE ADDRESS ",&RX_DATA[1]);
-        PutsUart0_int("SEQ ID         ",&RX_DATA[2]);
-        PutsUart0_int("COMMAND        ",&RX_DATA[3]);
-        PutsUart0_int("CHANNEL        ",&RX_DATA[4]);
-        PutsUart0_int("SIZE           ",&RX_DATA[5]);
-
-        for(i_for =0; i_for < RX_DATA[5];i_for++)
-        {
-        PutsUart0_int("DATA           ",&RX_DATA[6+i_for]);
-        }
-
-        PutsUart0_int("CHECKSUM       ",&RX_DATA[receivephase]);
-
-        putsUart0("********************************\r\n");
-        putsUart0("\r\n");
+                        print_received_packets();
 #endif
 
 
@@ -816,7 +911,6 @@ void Receive_uart1()
                     {
                         process_received_uart1_packet();
                         receivephase =0 ;
-                       // memset(RX_DATA,MAX_MSGS,0);
                     }
 
                 }
@@ -824,12 +918,16 @@ void Receive_uart1()
 
         }
 
+
 }
 void Timer1Isr() {
+
         Inprogress = false;
-        transmit_uart1();
+        if(!Transmit_control_flag)
+           transmit_uart1();
         Receive_uart1();
         TIMER1_ICR_R = TIMER_ICR_TATOCINT;               // clear interrupt flag
+
 }
 
 int main(void) {
@@ -840,11 +938,10 @@ int main(void) {
     initHw();
     on_booard_led_blink("GREEN_LED");
 
-#ifdef DEBUG_UART0_MSG
-    putsUart0("\rDEVICE  ADDRESS 2 : \n\r");
-#endif
-
     Device_initialization();
+
+ //   sprintf(STR_DEBUG," ****DEVICE  ADDRESS : %u *********\r\n",DEVICE_DETAIL.DEVICE_ADDRESS);
+ //   putsUart0(STR_DEBUG);
 
     while (1)
     {
